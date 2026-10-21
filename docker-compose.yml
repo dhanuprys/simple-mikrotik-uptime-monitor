@@ -1,0 +1,17 @@
+services:
+  monitor:
+    build: .
+    image: ghcr.io/dhanuprys/mikrotik-uptime-monitor:latest
+    container_name: mikrotik-monitor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TOKEN: "change-me-to-a-long-random-string"   # must match the key in the MikroTik script
+      TZ: "Asia/Makassar"                           # timezone used for weeks and day labels
+      DOWN_AFTER: "180"                             # seconds without heartbeat before "down"
+    volumes:
+      - monitor-data:/data
+
+volumes:
+  monitor-data:

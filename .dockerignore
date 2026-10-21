@@ -1,0 +1,5 @@
+data
+.git
+*.md
+docker-compose.yml
+monitor

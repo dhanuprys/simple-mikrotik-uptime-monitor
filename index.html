@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Router Monitor</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--fg:#1b2330;--muted:#697386;--line:#e2e6ec;--btn:#eef1f5;
+--up:#2e9e5b;--power:#d64545;--internet:#e8912d;--unknown:#8e44ad;--monitor:#7f8aa0;--reboot:#2f7de1;--boot:#0ea5e9;--nodata:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10141a;--card:#1a1f27;--fg:#e7eaf0;--muted:#97a1b3;--line:#2a313c;--btn:#242b36;--boot:#38bdf8;--nodata:#2b323d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between}
+h1{font-size:20px;margin:0}
+h2{font-size:15px;margin:22px 0 8px}
+.muted{color:var(--muted);font-size:13px;margin:6px 0 0}
+.badge{padding:6px 14px;border-radius:999px;font-weight:700;color:#fff;background:var(--monitor)}
+.badge.up{background:var(--up)}
+.badge.down{background:var(--power)}
+nav{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0}
+nav strong{min-width:210px;text-align:center}
+button{font:inherit;color:var(--fg);background:var(--btn);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.card b{display:block;font-size:20px}
+.card span{color:var(--muted);font-size:12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto}
+.row{display:grid;grid-template-columns:82px 1fr 62px;align-items:center;gap:8px;margin:6px 0}
+.dl{font-size:12px;color:var(--muted)}
+.dp{font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.bar{position:relative;height:22px;background:var(--nodata);border-radius:4px;overflow:hidden}
+.seg{position:absolute;top:0;bottom:0;min-width:2px}
+.seg.up{background:var(--up)}
+.seg.power{background:var(--power)}
+.seg.internet{background:var(--internet)}
+.seg.unknown{background:var(--unknown)}
+.seg.monitor{background:var(--monitor)}
+.seg.reboot{background:var(--reboot);min-width:3px;z-index:2}
+.seg.boot{background:var(--boot);min-width:3px;z-index:2}
+.seg.ongoing{background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4) 0 4px,transparent 4px 8px)}
+.grid{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,rgba(127,127,127,.5) 1px,transparent 1px);background-size:25% 100%}
+.axis{display:grid;grid-template-columns:82px 1fr 62px;gap:8px;font-size:11px;color:var(--muted)}
+.axis div{display:flex;justify-content:space-between}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-bottom:8px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.dot.up{background:var(--up)}.dot.power{background:var(--power)}.dot.internet{background:var(--internet)}
+.dot.unknown{background:var(--unknown)}.dot.monitor{background:var(--monitor)}.dot.reboot{background:var(--reboot)}
+.dot.boot{background:var(--boot)}.dot.nodata{background:var(--nodata)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:12px;color:var(--muted);font-weight:600}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Router Monitor</h1>
+    <div id="badge" class="badge">Loading…</div>
+  </header>
+  <p id="sub" class="muted"></p>
+
+  <nav>
+    <button id="prev" disabled>&larr; Previous</button>
+    <strong id="wk">–</strong>
+    <button id="next" disabled>Next &rarr;</button>
+    <button id="cur" disabled>This week</button>
+  </nav>
+
+  <section id="cards" class="cards"></section>
+
+  <h2>Timeline</h2>
+  <div class="panel">
+    <div id="legend" class="legend"></div>
+    <div id="days"></div>
+    <div class="axis"><span></span><div><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div><span></span></div>
+  </div>
+
+  <h2>Events</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Type</th><th>From</th><th>To</th><th>Duration</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var info = {};
+  var week = "";
+  var busy = false;
+
+  var LABEL = {
+    power: "Power loss / reboot",
+    internet: "Internet or link down",
+    unknown: "Down (cause unknown)",
+    monitor: "Monitor offline",
+    reboot: "Quick reboot",
+    boot: "Router boot"
+  };
+  var IS_DOWN = { power: 1, internet: 1, unknown: 1 };
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+
+  function buildLegend() {
+    var lg = $("legend");
+    [["up", "Online"], ["power", LABEL.power], ["internet", LABEL.internet], ["unknown", LABEL.unknown],
+     ["monitor", LABEL.monitor], ["boot", LABEL.boot], ["reboot", LABEL.reboot], ["nodata", "No data"]].forEach(function (x) {
+      var s = el("span");
+      s.appendChild(el("i", "dot " + x[0]));
+      s.appendChild(document.createTextNode(x[1]));
+      lg.appendChild(s);
+    });
+  }
+
+  function renderHeader(d) {
+    var st = d.status, b = $("badge");
+    var m = {
+      up: ["badge up", "ONLINE"],
+      down: ["badge down", "OFFLINE for " + st.down_for],
+      checking: ["badge", "CHECKING…"],
+      nodata: ["badge", "WAITING FOR FIRST HEARTBEAT"]
+    }[st.state] || ["badge", "UNKNOWN"];
+    b.className = m[0];
+    b.textContent = m[1];
+
+    var bits = [];
+    if (st.last_hb_str) bits.push("Last heartbeat " + st.last_hb_str + " (" + st.last_hb_ago + "s ago)");
+    if (st.last_boot_str) bits.push("Last boot " + st.last_boot_str);
+    if (st.router_uptime) bits.push("Router uptime " + st.router_uptime);
+    if (st.state === "down") bits.push("Down since " + st.down_since);
+    bits.push("Server time " + d.now_str + " (" + d.tz + ")");
+    $("sub").textContent = bits.join(" · ");
+
+    $("wk").textContent = d.week + " · " + d.range;
+    $("prev").disabled = !d.prev;
+    $("next").disabled = !d.next;
+    $("cur").disabled = !!d.is_current;
+  }
+
+  function renderCards(d) {
+    var s = d.stats, c = $("cards");
+    clear(c);
+    [
+      [s.availability === null ? "–" : s.availability.toFixed(2) + "%", "Availability"],
+      [s.downtime, "Downtime"],
+      [String(s.outages), "Outages"],
+      [s.longest, "Longest outage"],
+      [String(s.boots || 0), "Router boots"],
+      [String(s.reboots), "Quick reboots"],
+      [s.monitor_offline, "Monitor offline"]
+    ].forEach(function (x) {
+      var card = el("div", "card");
+      card.appendChild(el("b", null, x[0]));
+      card.appendChild(el("span", null, x[1]));
+      c.appendChild(card);
+    });
+  }
+
+  function renderDays(d) {
+    var box = $("days");
+    clear(box);
+    d.days.forEach(function (day) {
+      var span = day.end - day.start;
+      var row = el("div", "row");
+      row.appendChild(el("div", "dl", day.label));
+      var bar = el("div", "bar");
+
+      function place(node, s, e) {
+        var l = Math.max(s, day.start), r = Math.min(e, day.end);
+        if (r <= l) return false;
+        node.style.left = ((l - day.start) / span * 100) + "%";
+        node.style.width = ((r - l) / span * 100) + "%";
+        return true;
+      }
+
+      var obs = 0, down = 0;
+      if (d.data_from) {
+        var up = el("div", "seg up");
+        if (place(up, d.data_from, d.data_to)) bar.appendChild(up);
+        obs = Math.max(0, Math.min(day.end, d.data_to) - Math.max(day.start, d.data_from));
+      }
+      d.segments.forEach(function (sg) {
+        var n = el("div", "seg " + sg.cause + (sg.ongoing ? " ongoing" : ""));
+        n.title = (sg.cause === "reboot" || sg.cause === "boot")
+          ? (LABEL[sg.cause] || sg.cause) + " at " + sg.from
+          : (LABEL[sg.cause] || sg.cause) + ": " + sg.from + " → " + sg.to + " (" + sg.dur + ")";
+        if (place(n, sg.s, sg.e)) {
+          bar.appendChild(n);
+          var ov = Math.min(sg.e, day.end, d.data_to) - Math.max(sg.s, day.start, d.data_from);
+          if (ov > 0) {
+            if (sg.cause === "monitor") obs -= ov;
+            else if (IS_DOWN[sg.cause]) down += ov;
+          }
+        }
+      });
+      bar.appendChild(el("div", "grid"));
+      row.appendChild(bar);
+
+      var pct = "–";
+      if (obs > 0) pct = (Math.floor(Math.max(0, obs - down) / obs * 10000) / 100).toFixed(2) + "%";
+      row.appendChild(el("div", "dp", pct));
+      box.appendChild(row);
+    });
+  }
+
+  function renderTable(d) {
+    var body = $("rows");
+    clear(body);
+    if (!d.segments.length) {
+      var tr0 = el("tr");
+      var td0 = el("td", "muted", "No events recorded for this week.");
+      td0.colSpan = 4;
+      tr0.appendChild(td0);
+      body.appendChild(tr0);
+      return;
+    }
+    d.segments.slice().reverse().forEach(function (sg) {
+      var tr = el("tr");
+      var t = el("td");
+      t.appendChild(el("i", "dot " + sg.cause));
+      t.appendChild(document.createTextNode(LABEL[sg.cause] || sg.cause));
+      tr.appendChild(t);
+      tr.appendChild(el("td", null, sg.from));
+      tr.appendChild(el("td", null, sg.to || "–"));
+      tr.appendChild(el("td", null, sg.dur || "–"));
+      body.appendChild(tr);
+    });
+  }
+
+  function render(d) {
+    info = d;
+    renderHeader(d);
+    renderCards(d);
+    renderDays(d);
+    renderTable(d);
+  }
+
+  function load() {
+    if (busy) return;
+    busy = true;
+    fetch("api/week" + (week ? "?w=" + encodeURIComponent(week) : ""), { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(render)
+      .catch(function () {
+        var b = $("badge");
+        b.className = "badge";
+        b.textContent = "SERVER UNREACHABLE";
+      })
+      .then(function () { busy = false; });
+  }
+
+  $("prev").onclick = function () { if (info.prev) { week = info.prev; load(); } };
+  $("next").onclick = function () { if (info.next) { week = info.next; load(); } };
+  $("cur").onclick = function () { week = ""; load(); };
+
+  buildLegend();
+  load();
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>

@@ -23,7 +23,7 @@ docker run -d --name mikrotik-monitor --restart unless-stopped \
   -v monitor-data:/data \
   -e TOKEN=put-a-long-random-string-here \
   -e TZ=Asia/Makassar \
-  ghcr.io/dhanuprys/mikrotik-uptime-monitor:latest
+  ghcr.io/dhanuprys/simple-mikrotik-uptime-monitor:latest
 ```
 
 Or build locally:

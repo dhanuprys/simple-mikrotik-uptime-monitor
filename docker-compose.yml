@@ -1,7 +1,7 @@
 services:
   monitor:
     build: .
-    image: ghcr.io/dhanuprys/mikrotik-uptime-monitor:latest
+    image: ghcr.io/dhanuprys/simple-mikrotik-uptime-monitor:latest
     container_name: mikrotik-monitor
     restart: unless-stopped
     ports:
